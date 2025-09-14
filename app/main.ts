@@ -5,27 +5,45 @@ import * as net from "net";
 const OK_CODE = "HTTP/1.1 200 OK\r\n";
 const ERROR_CODE = "HTTP/1.1 404 Not Found\r\n\r\n";
 
+interface Headers {
+  "User-Agent": string;
+  host: string;
+}
 const server = net.createServer((socket) => {
   socket.on("close", () => {
     socket.end();
   });
-  socket.on("connect", () => {
-    console.log("rem");
-  });
+
   socket.on("data", (data) => {
     const content = data.toString();
-    const [status] = content.split("\r\n");
-    const url = status.split(" ")[1];
-    console.log("url", url);
-    if (url === "/") {
+
+    const [requestLine, headers, body] = parseRequest(content);
+
+    const requestTarget = requestLine.split(" ")[1];
+
+    const parsedHeaders = parseHeaders(headers);
+
+    if (requestTarget === "/") {
       socket.write(OK_CODE + "\r\n");
       return;
     }
-    const urls = url.split("/");
-    console.log("urls", urls);
+
+    if (requestTarget === "/user-agent") {
+      const agentValue = parsedHeaders.get("User-Agent");
+
+      if (!agentValue) {
+        return;
+      }
+
+      const response = createResponse(agentValue);
+      socket.write(response);
+      return;
+    }
+
+    const urls = requestTarget.split("/");
+
     if (urls[1] === "echo") {
       const response = createResponse(urls[2]);
-      console.log(response);
       socket.write(response);
     } else {
       socket.write(ERROR_CODE);
@@ -37,13 +55,34 @@ const server = net.createServer((socket) => {
 server.listen(4221, "localhost");
 
 function createResponse(data: string): string {
-  console.log("data", data);
-  return (
-    OK_CODE +
-    "Content-Type: text/plain\r\n" +
-    "Content-Length: " +
-    data.length +
-    "\r\n\r\n" +
-    data
-  );
+  const response = `${OK_CODE}Content-Type: text/plain\r\nContent-Length: ${data.length}\r\n\r\n${data}`;
+  return response;
+}
+
+function parseRequest(request: string) {
+  const headersStart = request.indexOf("\r\n");
+
+  const headersEnd = request.lastIndexOf("\r\n\r\n");
+
+  const requestLine = request.slice(0, request.indexOf("\r\n"));
+
+  const headers = request.slice(headersStart + 2, headersEnd);
+
+  const body = request.slice(headersEnd + 4);
+
+  return [requestLine, headers, body];
+}
+
+function parseHeaders(headers: string): Map<keyof Headers, string> {
+  const splittedHeaders = headers.split("\r\n");
+
+  const kvHeaders = new Map();
+  for (const sph of splittedHeaders) {
+    const separatorIdx = sph.indexOf(":");
+    const key = sph.slice(0, separatorIdx);
+    const value = sph.slice(separatorIdx + 1);
+    kvHeaders.set(key, value.trim());
+  }
+
+  return kvHeaders;
 }
