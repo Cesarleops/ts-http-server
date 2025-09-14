@@ -1,14 +1,17 @@
 import * as net from "net";
-
+import * as fs from "fs";
 //Returns a server object and attach the callback to be executed on a connection.
 
 const OK_CODE = "HTTP/1.1 200 OK\r\n";
 const ERROR_CODE = "HTTP/1.1 404 Not Found\r\n\r\n";
 
 interface Headers {
-  "User-Agent": string;
+  "user-agent": string;
   host: string;
 }
+
+const args = process.argv;
+console.log("args", args);
 const server = net.createServer((socket) => {
   socket.on("close", () => {
     socket.end();
@@ -29,21 +32,46 @@ const server = net.createServer((socket) => {
     }
 
     if (requestTarget === "/user-agent") {
-      const agentValue = parsedHeaders.get("User-Agent");
+      const agentValue = parsedHeaders.get("user-agent");
 
       if (!agentValue) {
         return;
       }
 
-      const response = createResponse(agentValue);
+      const response = createResponse(
+        agentValue,
+        agentValue.length,
+        "text/plain",
+      );
       socket.write(response);
       return;
     }
 
+    if (requestTarget.startsWith("/files")) {
+      console.log("not here");
+      const fileName = requestTarget.slice(requestTarget.lastIndexOf("/") + 1);
+      console.log("fn", fileName);
+
+      try {
+        const read = fs.readFileSync(`${args[3]}/${fileName}`);
+        const data = read.toString();
+
+        const response = createResponse(
+          data,
+          data.length,
+          "application/octet-stream",
+        );
+        console.log("r", read);
+        socket.write(response);
+      } catch (e) {
+        console.log("err", e);
+        socket.write(ERROR_CODE);
+      }
+    }
     const urls = requestTarget.split("/");
 
     if (urls[1] === "echo") {
-      const response = createResponse(urls[2]);
+      const response = createResponse(urls[2], urls[2].length, "text/plain");
       socket.write(response);
     } else {
       socket.write(ERROR_CODE);
@@ -54,8 +82,12 @@ const server = net.createServer((socket) => {
 //This will keep the server running until the connection is closed.
 server.listen(4221, "localhost");
 
-function createResponse(data: string): string {
-  const response = `${OK_CODE}Content-Type: text/plain\r\nContent-Length: ${data.length}\r\n\r\n${data}`;
+function createResponse(
+  data: string,
+  size: number,
+  contentType: string,
+): string {
+  const response = `${OK_CODE}Content-Type: ${contentType}\r\nContent-Length: ${size}\r\n\r\n${data}`;
   return response;
 }
 
@@ -77,9 +109,11 @@ function parseHeaders(headers: string): Map<keyof Headers, string> {
   const splittedHeaders = headers.split("\r\n");
 
   const kvHeaders = new Map();
+
   for (const sph of splittedHeaders) {
     const separatorIdx = sph.indexOf(":");
-    const key = sph.slice(0, separatorIdx);
+    //By Standard, the Headers are case insensitive.
+    const key = sph.slice(0, separatorIdx).toLowerCase();
     const value = sph.slice(separatorIdx + 1);
     kvHeaders.set(key, value.trim());
   }
