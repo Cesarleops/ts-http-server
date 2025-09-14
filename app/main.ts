@@ -22,7 +22,7 @@ const server = net.createServer((socket) => {
 
     const [requestLine, headers, body] = parseRequest(content);
 
-    const requestTarget = requestLine.split(" ")[1];
+    const [method, requestTarget] = parseRequestLine(requestLine);
 
     const parsedHeaders = parseHeaders(headers);
 
@@ -48,24 +48,35 @@ const server = net.createServer((socket) => {
     }
 
     if (requestTarget.startsWith("/files")) {
-      console.log("not here");
       const fileName = requestTarget.slice(requestTarget.lastIndexOf("/") + 1);
-      console.log("fn", fileName);
+      console.log("mthod", method);
+      if (method === "GET") {
+        try {
+          const read = fs.readFileSync(`${args[3]}/${fileName}`);
 
-      try {
-        const read = fs.readFileSync(`${args[3]}/${fileName}`);
-        const data = read.toString();
+          const data = read.toString();
 
-        const response = createResponse(
-          data,
-          data.length,
-          "application/octet-stream",
-        );
-        console.log("r", read);
-        socket.write(response);
-      } catch (e) {
-        console.log("err", e);
-        socket.write(ERROR_CODE);
+          const response = createResponse(
+            data,
+            data.length,
+            "application/octet-stream",
+          );
+
+          socket.write(response);
+        } catch (e) {
+          socket.write(ERROR_CODE);
+        }
+      }
+
+      if (method === "POST") {
+        console.log("posting", body, fileName);
+        try {
+          fs.writeFileSync(`${args[3]}/${fileName}`, body);
+          socket.write("HTTP/1.1 201 Created\r\n\r\n");
+        } catch (e) {
+          console.log("err", e);
+          socket.write(ERROR_CODE);
+        }
       }
     }
     const urls = requestTarget.split("/");
@@ -119,4 +130,8 @@ function parseHeaders(headers: string): Map<keyof Headers, string> {
   }
 
   return kvHeaders;
+}
+
+function parseRequestLine(requestLine: string) {
+  return requestLine.split(" ");
 }
